@@ -1,6 +1,7 @@
 package vgarender
 
 import (
+	"image"
 	"image/color"
 	"math"
 
@@ -30,8 +31,9 @@ type Text struct {
 	font       *Font
 	blinkAttr  bool // true: attribute bit 7 means blink; false: background intensity
 
-	fsKeys    bool // handle the built-in fullscreen hotkeys (F11, Alt+Enter)
-	startFull bool // start in fullscreen
+	fsKeys    bool         // handle the built-in fullscreen hotkeys (F11, Alt+Enter)
+	startFull bool         // start in fullscreen
+	update    func() error // per-frame callback invoked by Update; nil to disable
 
 	cur    cursor
 	ticks  uint64
@@ -214,8 +216,13 @@ func altPressed() bool {
 	return ebiten.IsKeyPressed(ebiten.KeyAltLeft) || ebiten.IsKeyPressed(ebiten.KeyAltRight)
 }
 
-// Update advances the blink clock and handles the fullscreen hotkeys. It
-// satisfies ebiten.Game.
+// OnUpdate registers a callback invoked once per frame, after the blink clock
+// and fullscreen hotkeys are handled. Returning a non-nil error stops Run;
+// return ebiten.Termination to quit cleanly. Passing nil clears the callback.
+func (t *Text) OnUpdate(fn func() error) { t.update = fn }
+
+// Update advances the blink clock, handles the fullscreen hotkeys, and runs the
+// OnUpdate callback. It satisfies ebiten.Game.
 func (t *Text) Update() error {
 	t.ticks++
 	if t.fsKeys {
@@ -224,6 +231,9 @@ func (t *Text) Update() error {
 		if f11 || altEnter {
 			t.ToggleFullscreen()
 		}
+	}
+	if t.update != nil {
+		return t.update()
 	}
 	return nil
 }
@@ -254,6 +264,16 @@ func (t *Text) Draw(screen *ebiten.Image) {
 	op.GeoM.Scale(float64(fit), float64(fit))
 	op.GeoM.Translate(ox, oy)
 	screen.DrawImage(t.screen, op)
+}
+
+// Snapshot renders the current screen to an image at native resolution
+// (cols*CellWidth by rows*CellHeight). It is handy for headless tests and screen
+// captures and does not require a running game.
+func (t *Text) Snapshot() *image.RGBA {
+	t.render()
+	img := image.NewRGBA(image.Rect(0, 0, t.cols*CellWidth, t.rows*CellHeight))
+	copy(img.Pix, t.fb)
+	return img
 }
 
 // Layout maps the logical screen to device pixels (using the monitor's scale

@@ -154,6 +154,20 @@ func TestRenderFramebuffer(t *testing.T) {
 	}
 }
 
+func TestSnapshot(t *testing.T) {
+	scr := NewText(4, 2)
+	img := scr.Snapshot()
+	if got, want := img.Bounds().Dx(), 4*CellWidth; got != want {
+		t.Fatalf("snapshot width = %d, want %d", got, want)
+	}
+	if got, want := img.Bounds().Dy(), 2*CellHeight; got != want {
+		t.Fatalf("snapshot height = %d, want %d", got, want)
+	}
+	if _, _, _, a := img.At(0, 0).RGBA(); a == 0 {
+		t.Fatal("snapshot pixel is not opaque")
+	}
+}
+
 func TestPrintClipsAtRowEdge(t *testing.T) {
 	scr := NewText(5, 1)
 	scr.Print(3, 0, "ABCDE", 0x07)
