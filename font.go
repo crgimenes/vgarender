@@ -1,6 +1,6 @@
 package vgarender
 
-//go:generate go run ./internal/genfont -in internal/genfont/3dfx8x16.bin -out font3dfx.go
+//go:generate go run ./cmd/genfont -in cmd/genfont/3dfx8x16.bin -out font3dfx.go
 
 // GlyphWidth is the source pixel width of the VGA fonts. Text cells are one
 // pixel wider (see CellWidth) to make room for the VGA "9-dot" column.

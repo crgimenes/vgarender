@@ -2,8 +2,10 @@ package vgarender
 
 import (
 	"image/color"
+	"math"
 
 	"github.com/hajimehoshi/ebiten/v2"
+	"github.com/hajimehoshi/ebiten/v2/inpututil"
 )
 
 // Cell geometry of the VGA 80x25 text mode displayed at 720x400.
@@ -23,10 +25,13 @@ const (
 // Ebitengine. It implements ebiten.Game.
 type Text struct {
 	cols, rows int
-	scale      int
+	scale      int    // initial window scale; the on-screen scale is computed per frame
 	mem        []byte // cols*rows*2: [code, attr] per cell
 	font       *Font
 	blinkAttr  bool // true: attribute bit 7 means blink; false: background intensity
+
+	fsKeys    bool // handle the built-in fullscreen hotkeys (F11, Alt+Enter)
+	startFull bool // start in fullscreen
 
 	cur    cursor
 	ticks  uint64
@@ -43,7 +48,9 @@ type cursor struct {
 // Option configures a Text screen.
 type Option func(*Text)
 
-// WithScale sets the integer pixel scale (default 2). Values below 1 are ignored.
+// WithScale sets the initial window scale (default 2). The on-screen scale is
+// recomputed each frame as the largest integer that fits, so this only sizes the
+// opening window. Values below 1 are ignored.
 func WithScale(s int) Option {
 	return func(t *Text) {
 		if s >= 1 {
@@ -61,6 +68,17 @@ func WithFont(f *Font) Option {
 	}
 }
 
+// WithFullscreen starts the screen in fullscreen.
+func WithFullscreen(enabled bool) Option {
+	return func(t *Text) { t.startFull = enabled }
+}
+
+// WithFullscreenKeys enables or disables the built-in fullscreen hotkeys (F11
+// and Alt+Enter). It is enabled by default.
+func WithFullscreenKeys(enabled bool) Option {
+	return func(t *Text) { t.fsKeys = enabled }
+}
+
 // NewText creates a text screen of cols x rows cells filled with spaces on a
 // light-gray-on-black attribute.
 func NewText(cols, rows int, opts ...Option) *Text {
@@ -71,6 +89,7 @@ func NewText(cols, rows int, opts ...Option) *Text {
 		mem:       make([]byte, cols*rows*2),
 		font:      Font3dfx(),
 		blinkAttr: true,
+		fsKeys:    true,
 		cur:       cursor{start: 14, end: 15, visible: true},
 	}
 	for _, o := range opts {
@@ -169,37 +188,89 @@ func (t *Text) SetFont(f *Font) {
 	}
 }
 
-// Run opens a window sized for the current scale and runs the screen until the
-// window is closed.
+// Run opens a resizable window sized for the initial scale and runs the screen
+// until the window is closed.
 func (t *Text) Run(title string) error {
 	ebiten.SetWindowSize(t.cols*CellWidth*t.scale, t.rows*CellHeight*t.scale)
 	ebiten.SetWindowTitle(title)
+	ebiten.SetWindowResizingMode(ebiten.WindowResizingModeEnabled)
+	ebiten.SetWindowSizeLimits(t.cols*CellWidth, t.rows*CellHeight, -1, -1)
+	if t.startFull {
+		ebiten.SetFullscreen(true)
+	}
 	return ebiten.RunGame(t)
 }
 
-// Update advances the blink clock. It satisfies ebiten.Game.
+// SetFullscreen enables or disables fullscreen.
+func (t *Text) SetFullscreen(enabled bool) { ebiten.SetFullscreen(enabled) }
+
+// ToggleFullscreen flips between windowed and fullscreen.
+func (t *Text) ToggleFullscreen() { ebiten.SetFullscreen(!ebiten.IsFullscreen()) }
+
+// IsFullscreen reports whether the screen is fullscreen.
+func (t *Text) IsFullscreen() bool { return ebiten.IsFullscreen() }
+
+func altPressed() bool {
+	return ebiten.IsKeyPressed(ebiten.KeyAltLeft) || ebiten.IsKeyPressed(ebiten.KeyAltRight)
+}
+
+// Update advances the blink clock and handles the fullscreen hotkeys. It
+// satisfies ebiten.Game.
 func (t *Text) Update() error {
 	t.ticks++
+	if t.fsKeys {
+		f11 := inpututil.IsKeyJustPressed(ebiten.KeyF11)
+		altEnter := altPressed() && inpututil.IsKeyJustPressed(ebiten.KeyEnter)
+		if f11 || altEnter {
+			t.ToggleFullscreen()
+		}
+	}
 	return nil
 }
 
-// Draw renders the screen. It satisfies ebiten.Game.
+// Draw renders the screen. The native 720x400 image is scaled by the largest
+// integer that fits the window and centred on a black background, keeping pixels
+// crisp in both windowed and fullscreen modes. It satisfies ebiten.Game.
 func (t *Text) Draw(screen *ebiten.Image) {
+	nativeW := t.cols * CellWidth
+	nativeH := t.rows * CellHeight
 	if t.screen == nil {
-		t.screen = ebiten.NewImage(t.cols*CellWidth, t.rows*CellHeight)
+		t.screen = ebiten.NewImage(nativeW, nativeH)
 	}
 	t.render()
 	t.screen.WritePixels(t.fb)
 
+	screen.Fill(color.RGBA{A: 0xff})
+
+	b := screen.Bounds()
+	fit := min(b.Dx()/nativeW, b.Dy()/nativeH)
+	if fit < 1 {
+		fit = 1
+	}
+	ox := float64((b.Dx() - nativeW*fit) / 2)
+	oy := float64((b.Dy() - nativeH*fit) / 2)
+
 	op := &ebiten.DrawImageOptions{}
-	op.GeoM.Scale(float64(t.scale), float64(t.scale))
+	op.GeoM.Scale(float64(fit), float64(fit))
+	op.GeoM.Translate(ox, oy)
 	screen.DrawImage(t.screen, op)
 }
 
-// Layout reports the logical screen size, which equals the scaled window so the
-// offscreen image maps 1:1 with nearest-neighbour filtering (crisp pixels).
-func (t *Text) Layout(int, int) (int, int) {
-	return t.cols * CellWidth * t.scale, t.rows * CellHeight * t.scale
+// Layout maps the logical screen to device pixels (using the monitor's scale
+// factor) so the offscreen image is placed and scaled in real pixels. It
+// satisfies ebiten.Game.
+func (t *Text) Layout(outsideWidth, outsideHeight int) (int, int) {
+	dpr := ebiten.Monitor().DeviceScaleFactor()
+	if dpr <= 0 {
+		dpr = 1
+	}
+	if outsideWidth <= 0 || outsideHeight <= 0 {
+		outsideWidth = t.cols * CellWidth * t.scale
+		outsideHeight = t.rows * CellHeight * t.scale
+	}
+	w := int(math.Round(float64(outsideWidth) * dpr))
+	h := int(math.Round(float64(outsideHeight) * dpr))
+	return w, h
 }
 
 func (t *Text) attrBlinkOn() bool   { return (t.ticks/attrBlinkPeriod)%2 == 0 }

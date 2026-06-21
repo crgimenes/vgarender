@@ -72,6 +72,8 @@ func main() {
 		t.SetCell(15+i, 21, ' ', attr(0, byte(i)))
 	}
 
+	t.Print(6, 23, "F11 or Alt+Enter: toggle fullscreen", attr(8, 0))
+
 	if err := t.Run("vgarender - charmap"); err != nil {
 		log.Fatal(err)
 	}
