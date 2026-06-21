@@ -30,3 +30,19 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
+
+# macOS
+.DS_Store
+
+# Build output
+/bin/
+dist/
+
+# Local notes / planning
+TODO.md
+notes.md
+
+# Assistant configuration and notes (kept out of the repo)
+.claude/
+CLAUDE.md
+CLAUDE.local.md
