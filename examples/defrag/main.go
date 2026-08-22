@@ -207,7 +207,7 @@ func (g *defrag) reset() {
 			g.disk[i] = free
 		}
 	}
-	for k := 0; k < 6; k++ {
+	for range 6 {
 		g.disk[g.rng.intn(nSect)] = unmovable
 	}
 	g.disk[g.rng.intn(nSect)] = bad
@@ -231,10 +231,7 @@ func (g *defrag) reset() {
 
 // scheduleNext picks a randomized wait, in frames, before the next cluster move.
 func (g *defrag) scheduleNext() {
-	g.nextStep = stepBaseFrames + g.rng.intn(2*stepJitterFrames+1) - stepJitterFrames
-	if g.nextStep < 1 {
-		g.nextStep = 1
-	}
+	g.nextStep = max(stepBaseFrames+g.rng.intn(2*stepJitterFrames+1)-stepJitterFrames, 1)
 }
 
 // lastUsed returns the back-most still-fragmented cluster ahead of head, or -1.

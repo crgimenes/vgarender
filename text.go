@@ -253,10 +253,7 @@ func (t *Text) Draw(screen *ebiten.Image) {
 	screen.Fill(color.RGBA{A: 0xff})
 
 	b := screen.Bounds()
-	fit := min(b.Dx()/nativeW, b.Dy()/nativeH)
-	if fit < 1 {
-		fit = 1
-	}
+	fit := max(min(b.Dx()/nativeW, b.Dy()/nativeH), 1)
 	ox := float64((b.Dx() - nativeW*fit) / 2)
 	oy := float64((b.Dy() - nativeH*fit) / 2)
 
