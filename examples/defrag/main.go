@@ -284,10 +284,10 @@ func (g *defrag) finish() {
 
 // stateAt derives the current render state of cell i.
 func (g *defrag) stateAt(i int) sector {
-	switch {
-	case i == g.writePos:
+	switch i {
+	case g.writePos:
 		return writing
-	case i == g.readPos:
+	case g.readPos:
 		return reading
 	default:
 		return g.disk[i]
